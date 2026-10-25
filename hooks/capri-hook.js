@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// Claude Code hook -> Capri.
+// Claude Code / Codex hook -> Capri.
 // Reads the hook event on stdin and forwards a trimmed copy to the Capri app.
 // Rule #1: never get in Claude's way. No output, always exit 0, give up fast.
 
@@ -15,6 +15,7 @@ const KEEP = [
   'tool_name', 'tool_input', 'tool_use_id', 'duration_ms', 'error', 'is_interrupt',
   'prompt', 'message', 'title', 'notification_type', 'last_assistant_message',
   'agent_id', 'agent_type', 'source', 'reason', 'trigger',
+  'provider', 'file_paths',
 ];
 
 function trim(value, depth = 0) {
@@ -40,10 +41,48 @@ function trim(value, depth = 0) {
 const REPLY_MAX = 6000;
 
 function slim(evt) {
+  if (process.argv.includes('--codex')) evt = codexEvent(evt);
   const out = {};
   for (const key of KEEP) if (evt[key] !== undefined) out[key] = trim(evt[key]);
   const reply = evt.last_assistant_message;
   if (typeof reply === 'string') out.last_assistant_message = reply.length > REPLY_MAX ? reply.slice(0, REPLY_MAX) + '…' : reply;
+  return out;
+}
+
+function codexEvent(evt) {
+  const out = { ...evt, provider: 'codex', session_id: `codex:${evt.session_id || 'default'}` };
+  const input = evt.tool_input;
+  if (evt.tool_name === 'apply_patch') {
+    const patch = typeof input === 'string' ? input : input?.command || input?.patch || '';
+    out.file_paths = [...patch.matchAll(/^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)\r?$/gm)].map((m) => m[1].trim());
+    out.tool_name = 'Edit';
+    out.tool_input = { file_path: out.file_paths[0] || '', content_len: patch.length };
+  } else if (['Bash', 'exec_command', 'shell', 'shell_command'].includes(evt.tool_name)) {
+    out.tool_name = 'Bash';
+    out.tool_input = { command: input?.command || input?.cmd, description: input?.description };
+    if (Array.isArray(out.tool_input.command)) out.tool_input.command = out.tool_input.command.join(' ');
+  }
+  if (evt.hook_event_name === 'PermissionRequest') {
+    out.hook_event_name = 'Notification';
+    out.notification_type = 'permission_prompt';
+    out.message = input?.description || `Codex needs permission: ${out.tool_name || 'tool'}`;
+  }
+  if (evt.hook_event_name === 'PreToolUse' && evt.tool_name === 'request_user_input') {
+    out.hook_event_name = 'Notification';
+    out.notification_type = 'agent_needs_input';
+    out.message = (input?.questions || []).map((q) => q.question || q.title || '').join('\n') || 'Codex needs your answer.';
+  }
+  if (evt.hook_event_name === 'PostToolUse') {
+    const response = evt.tool_response;
+    // ponytail: recognize structured failures and Bash's exit-status header only; new tool formats need explicit mappings.
+    const code = response?.exit_code ?? response?.exitCode ?? response?.metadata?.exit_code;
+    const failed = response?.isError === true || (typeof code === 'number' && code !== 0)
+      || (out.tool_name === 'Bash' && typeof response === 'string' && /^(?:Process exited with code|Exit code:)\s*-?[1-9]\d*\s*$/m.test(response));
+    if (failed) {
+      out.hook_event_name = 'PostToolUseFailure';
+      out.error = typeof response === 'string' ? response : `Codex tool failed${code == null ? '' : ` (exit code ${code})`}`;
+    }
+  }
   return out;
 }
 
@@ -61,10 +100,12 @@ process.stdin.on('end', () => {
   let evt;
   try {
     evt = JSON.parse(raw);
+    if (!evt || typeof evt !== 'object' || Array.isArray(evt)) return bail();
   } catch {
     return bail();
   }
-  const body = JSON.stringify(slim(evt));
+  let body;
+  try { body = JSON.stringify(slim(evt)); } catch { return bail(); }
   const req = http.request({
     host: '127.0.0.1',
     port: PORT,

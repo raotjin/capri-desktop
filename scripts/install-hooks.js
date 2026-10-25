@@ -30,7 +30,8 @@ const EVENTS = [
 
 const MARK = 'capri-hook.js';
 
-function settingsPath() {
+function settingsPath(provider = 'claude') {
+  if (provider === 'codex') return path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'hooks.json');
   const base = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
   return path.join(base, 'settings.json');
 }
@@ -45,10 +46,19 @@ function hasNode() {
 
 // In the installed app (the .exe) the hook sits next to the app archive (asarUnpack), where
 // node can read it. With no node on the machine, Capri's own executable runs it as node.
-function hookCommand() {
+function hookCommand(provider = 'claude') {
   const script = path.resolve(__dirname, '..', 'hooks', 'capri-hook.js')
     .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`)
     .replace(/\\/g, '/');
+  if (provider === 'codex') {
+    // Codex uses PowerShell on Windows; keep the command valid with or without Node installed.
+    const runtime = hasNode() ? 'node' : process.execPath;
+    if (process.platform === 'win32') {
+      const quote = (s) => `'${s.replace(/'/g, "''")}'`;
+      return `${runtime === 'node' ? '' : '$env:ELECTRON_RUN_AS_NODE=\'1\'; '}& ${quote(runtime)} ${quote(script)} --codex`;
+    }
+    return `${runtime === 'node' ? 'node' : `ELECTRON_RUN_AS_NODE=1 "${runtime}"`} "${script}" --codex`;
+  }
   if (process.versions.electron && !hasNode()) {
     return `ELECTRON_RUN_AS_NODE=1 "${process.execPath.replace(/\\/g, '/')}" "${script}"`;
   }
@@ -76,7 +86,9 @@ function strip(settings) {
   for (const event of Object.keys(settings.hooks)) {
     const groups = settings.hooks[event];
     if (!Array.isArray(groups)) continue;
-    settings.hooks[event] = groups.filter((g) => !isCapriGroup(g));
+    settings.hooks[event] = groups.map((g) => isCapriGroup(g)
+      ? { ...g, hooks: g.hooks.filter((h) => !String(h.command || '').includes(MARK)) } : g)
+      .filter((g) => !Array.isArray(g?.hooks) || g.hooks.length > 0);
     if (settings.hooks[event].length === 0) delete settings.hooks[event];
   }
   if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
@@ -92,25 +104,29 @@ function write(file, settings) {
   fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
 }
 
-function install() {
-  const file = settingsPath();
+function install(provider = 'claude') {
+  const file = settingsPath(provider);
   const original = readSettings(file);
   const before = JSON.stringify(original);
   const settings = strip(original);
   settings.hooks = settings.hooks || {};
-  const command = hookCommand();
-  for (const event of EVENTS) {
+  const command = hookCommand(provider);
+  const events = provider === 'codex'
+    ? EVENTS.filter((event) => !['Notification', 'PostToolUseFailure', 'StopFailure'].includes(event)).concat('PermissionRequest', 'Interrupt')
+    : EVENTS;
+  for (const event of events) {
     settings.hooks[event] = settings.hooks[event] || [];
     settings.hooks[event].push({
-      hooks: [{ type: 'command', command, async: true, timeout: 10 }],
+      // ponytail: local Codex delivery is synchronous to preserve event order; the sender gives up in 2s.
+      hooks: [{ type: 'command', command, ...(provider === 'codex' ? {} : { async: true }), timeout: provider === 'codex' ? 3 : 10 }],
     });
   }
   if (JSON.stringify(settings) !== before) write(file, settings); // already up to date: no backup spam
-  return { file, command, events: EVENTS.length };
+  return { file, command, events: events.length };
 }
 
-function uninstall() {
-  const file = settingsPath();
+function uninstall(provider = 'claude') {
+  const file = settingsPath(provider);
   if (!fs.existsSync(file)) return { file, removed: false };
   const settings = readSettings(file);
   const before = JSON.stringify(settings);
@@ -120,8 +136,8 @@ function uninstall() {
   return { file, removed };
 }
 
-function status() {
-  const file = settingsPath();
+function status(provider = 'claude') {
+  const file = settingsPath(provider);
   try {
     const settings = readSettings(file);
     const events = Object.entries(settings.hooks || {})
@@ -137,18 +153,19 @@ module.exports = { install, uninstall, status, EVENTS };
 
 if (require.main === module) {
   const arg = process.argv[2];
+  const provider = process.argv.includes('--codex') ? 'codex' : 'claude';
   try {
     if (arg === '--uninstall') {
-      const r = uninstall();
+      const r = uninstall(provider);
       console.log(r.removed ? `Capri hooks removed from ${r.file}` : `No Capri hooks found in ${r.file}`);
     } else if (arg === '--status') {
-      const r = status();
+      const r = status(provider);
       console.log(r.installed ? `Installed (${r.events.join(', ')}) in ${r.file}` : `Not installed (${r.file})`);
     } else {
-      const r = install();
+      const r = install(provider);
       console.log(`Capri hooks installed for ${r.events} events in ${r.file}`);
       console.log(`Command: ${r.command}`);
-      console.log('Start a new Claude Code session for them to take effect.');
+      console.log(provider === 'codex' ? 'Restart Codex and review/trust the Capri hooks in /hooks.' : 'Start a new Claude Code session for them to take effect.');
     }
   } catch (err) {
     console.error(err.message);

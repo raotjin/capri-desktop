@@ -86,9 +86,10 @@ export class Guide {
         // not watching Claude Code: she's just here to keep you company
         this.capri.perform('curious', this.capri.towardCenter());
         await this.ask({ face: 'grin', line: w.hi, quote: `${w.alone}\n${w.menu}`, actions: [{ id: 'ok', label: w.ok, primary: true }] });
-      } else if (hooks.installed) {
+      } else if (hooks.installed || hooks.codexInstalled) {
         this.capri.perform('curious', this.capri.towardCenter());
-        await this.ask({ face: 'look', line: w.ready, quote: w.readyHow, actions: [{ id: 'ok', label: w.ok, primary: true }, { id: 'more', label: this.t.more }] })
+        const ready = !hooks.installed && hooks.codexInstalled ? w.ready.replace(/Claude(?: Code)?/g, 'Codex') : w.ready;
+        await this.ask({ face: 'look', line: ready, quote: w.readyHow, actions: [{ id: 'ok', label: w.ok, primary: true }, { id: 'more', label: this.t.more }] })
           .then((id) => id === 'more' && this.menuNow());
       } else if (found) {
         await this.connect();

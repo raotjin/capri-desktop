@@ -189,11 +189,11 @@ async function boot() {
   // the first Claude Code event that ever reaches her: so you know it worked
   brain.linked = config.linked;
   brain.watching = config.claude !== false;
-  brain.onLinked = () => {
+  brain.onLinked = (evt) => {
     host.setConfig({ linked: true, welcomed: true });
     voice.play('hello');
     capri.perform('hop');
-    panel.say({ kind: 'done', badge: 'LINK', line: brain.t.welcome.linked, hold: 6000 });
+    panel.say({ kind: 'done', badge: 'LINK', line: evt.provider === 'codex' ? brain.t.welcome.linked.replace(/Claude(?: Code)?/g, 'Codex') : brain.t.welcome.linked, hold: 6000 });
   };
 
   // The demo's second half, after its fake Claude session: everything she does on her own, one
@@ -361,6 +361,12 @@ async function boot() {
         if (!capri.gaze({ big: true })) setTimeout(() => capri.gaze({ big: true }), 1500);
         break;
       case 'hooks':
+        if (cmd.provider === 'codex') {
+          panel.say({ kind: cmd.ok ? 'info' : 'error', line: cmd.ok
+            ? (cmd.action === 'install' ? 'Codex hooks installed. Restart Codex and review/trust the Capri hooks in /hooks.' : 'Capri Codex hooks removed.')
+            : cmd.error, hold: 9000 });
+          break;
+        }
         if (cmd.ok) panel.say({ kind: 'info', line: cmd.action === 'install' ? t.hooksOk : t.hooksRemoved, hold: 6000 });
         else panel.say({ kind: 'error', line: fmt(t.hooksFail, { error: cmd.error }), hold: 9000 });
         break;
@@ -438,7 +444,7 @@ async function boot() {
   }
   const hooks = await host.hooksStatus();
   // her welcome: the first time, or while she's meant to watch Claude Code and isn't plugged into it
-  if (!config.welcomed || (config.claude && !hooks.installed)) guide.welcome();
+  if (!config.welcomed || (config.claude && !(hooks.installed || hooks.codexInstalled))) guide.welcome();
   else panel.say({ kind: 'info', line: pick(brain.t.online), hold: 4000 });
 
   // In the evening, after a real day's work, she brings you her report card once, on her own,

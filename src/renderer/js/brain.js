@@ -41,7 +41,7 @@ export class Brain {
     const id = evt.session_id || 'default';
     let s = this.sessions.get(id);
     if (!s) {
-      s = { id, project: 'Claude', taskStart: null, count: 0, files: new Set(), log: [], working: false, waiting: false };
+      s = { id, provider: evt.provider === 'codex' ? 'Codex' : 'Claude', project: evt.provider === 'codex' ? 'Codex' : 'Claude', taskStart: null, count: 0, files: new Set(), log: [], working: false, waiting: false };
       this.sessions.set(id, s);
     }
     if (evt.cwd) s.project = basename(evt.cwd);
@@ -55,6 +55,7 @@ export class Brain {
   }
 
   say(kind, line, s, extra = {}) {
+    if (s?.provider === 'Codex') line = line.replace(/Claude(?: Code)?/g, 'Codex');
     return this.panel.say({ kind, line, tag: s ? s.title || s.project : '', ...extra });
   }
 
@@ -70,7 +71,7 @@ export class Brain {
     // the first real Claude Code event that ever reaches her (the demo's don't count)
     if (!this.linked && !evt.demo) {
       this.linked = true;
-      this.onLinked?.();
+      this.onLinked?.(evt);
     }
     const s = this.session(evt);
     const name = evt.hook_event_name;
@@ -99,6 +100,13 @@ export class Brain {
       case 'SubagentStop': return this.onSubagent(evt, s, false);
       case 'PreCompact': return this.say('info', pick(this.t.compact), s, { face: 'aside', hold: 4000 });
       case 'SessionEnd': return this.onSessionEnd(evt, s);
+      case 'Interrupt':
+        s.working = false;
+        if (!this.busySessions.length) {
+          this.panel.setTicker(null);
+          this.capri.setMode('idle');
+        }
+        return this.say('info', pick(this.t.interrupted), s, { face: 'wide', hold: 4000 });
       default: return undefined;
     }
   }
@@ -178,6 +186,7 @@ export class Brain {
     if (EDIT_TOOLS.has(evt.tool_name)) {
       const file = evt.tool_input?.file_path || evt.tool_input?.notebook_path;
       if (file) s.files.add(file);
+      for (const path of evt.file_paths || []) s.files.add(path);
     }
     if (this.capri.mode !== 'alert') this.capri.setMode('work');
     this.capri.pulse();
@@ -219,9 +228,10 @@ export class Brain {
       // you're on another window: she goes and points at Claude's, where the question is
       const win = this.away(s) && this.capri.windows.wins.find((w) => w.id === s.window);
       if (win && this.capri.canPoint(win)) {
-        const quote = [this.t.guide.permissionThere, evt.message].filter(Boolean).join('\n');
+        const there = s.provider === 'Codex' ? this.t.guide.permissionThere.replace(/Claude(?: Code)?/g, 'Codex') : this.t.guide.permissionThere;
+        const quote = [there, evt.message].filter(Boolean).join('\n');
         this.say('alert', pick(this.t.permission), s, { quote, hold: null });
-        s.pointedAt = await this.capri.pointAt(win, { label: this.t.guide.labels.claude });
+        s.pointedAt = await this.capri.pointAt(win, { label: s.provider === 'Codex' ? 'CODEX' : this.t.guide.labels.claude });
         if (!s.waiting && s.pointedAt) this.capri.stopPointing(); // answered while she was on her way
         return;
       }

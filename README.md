@@ -201,6 +201,29 @@ Restart your Claude Code sessions afterwards. To remove it: `npm run hooks:unins
 
 The hooks run `async`: they never slow Claude down, and when Capri isn't running they do nothing.
 
+### Connect Codex (desktop app or CLI)
+
+Right-click Capri and choose **Install Codex hooks**, then restart Codex. Review and trust the
+new Capri hook definitions in Codex's hook manager (`/hooks` in the CLI). Codex skips untrusted hooks.
+Claude Code and Codex can both stay connected.
+
+From source, you can also run:
+
+```bash
+npm run hooks:codex:install
+```
+
+This adds Capri to `~/.codex/hooks.json` (or `$CODEX_HOME/hooks.json`), preserves other hooks,
+and backs up the original file. Remove only Capri's Codex hooks with **Remove Codex hooks**
+in her menu or `npm run hooks:codex:uninstall`.
+
+Capri reacts to prompts, local tool activity, permission requests, recognized tool failures,
+completion, interruption, and subagents. Hosted tools such as Codex web search don't emit local tool hooks.
+No API key is needed. Events stay on localhost, and patch contents are replaced with filenames and sizes.
+These hooks support local Codex sessions, not cloud-orchestrated chats.
+
+Run `npm run test:codex` to check hook installation, event delivery, and the character's responses.
+
 ### Try it without Claude
 
 ```bash
@@ -250,7 +273,7 @@ named like this (`.mp3`, `.wav`, `.ogg` or `.m4a`):
 
 - **Mac, Linux?** No installer yet, but you can run her from the source (see above).
 - **Phone, Android?** No, she needs a desktop.
-- **Other assistants (Codex, Cursor, Windsurf, Gemini…)?** Claude Code only for now.
+- **Other assistants?** Claude Code and local Codex sessions are supported. See the Codex setup above.
 - **Ollama?** Two ways. Claude Code running on a local model through Ollama (`ollama launch claude`): she sees it like
   any Claude Code, it's just slower, and her ticker counts the seconds while it thinks. And she can chat with you
   through Ollama herself: see "Talk to her".
