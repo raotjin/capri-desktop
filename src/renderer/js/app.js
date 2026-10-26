@@ -193,7 +193,8 @@ async function boot() {
     host.setConfig({ linked: true, welcomed: true });
     voice.play('hello');
     capri.perform('hop');
-    panel.say({ kind: 'done', badge: 'LINK', line: evt.provider === 'codex' ? brain.t.welcome.linked.replace(/Claude(?: Code)?/g, 'Codex') : brain.t.welcome.linked, hold: 6000 });
+    const provider = { codex: 'Codex', opencode: 'OpenCode' }[evt.provider] || 'Claude Code';
+    panel.say({ kind: 'done', badge: 'LINK', line: brain.t.welcome.linked.replace(/Claude(?: Code)?/g, provider), hold: 6000 });
   };
 
   // The demo's second half, after its fake Claude session: everything she does on her own, one
@@ -361,6 +362,12 @@ async function boot() {
         if (!capri.gaze({ big: true })) setTimeout(() => capri.gaze({ big: true }), 1500);
         break;
       case 'hooks':
+        if (cmd.provider === 'opencode') {
+          panel.say({ kind: cmd.ok ? 'info' : 'error', line: cmd.ok
+            ? (cmd.action === 'install' ? 'OpenCode plugin installed. Restart or reload OpenCode 2 to connect Capri.' : 'Capri OpenCode plugin removed.')
+            : cmd.error, hold: 9000 });
+          break;
+        }
         if (cmd.provider === 'codex') {
           panel.say({ kind: cmd.ok ? 'info' : 'error', line: cmd.ok
             ? (cmd.action === 'install' ? 'Codex hooks installed. Restart Codex and review/trust the Capri hooks in /hooks.' : 'Capri Codex hooks removed.')
@@ -444,7 +451,7 @@ async function boot() {
   }
   const hooks = await host.hooksStatus();
   // her welcome: the first time, or while she's meant to watch Claude Code and isn't plugged into it
-  if (!config.welcomed || (config.claude && !(hooks.installed || hooks.codexInstalled))) guide.welcome();
+  if (!config.welcomed || (config.claude && !(hooks.installed || hooks.codexInstalled || hooks.opencodeInstalled))) guide.welcome();
   else panel.say({ kind: 'info', line: pick(brain.t.online), hold: 4000 });
 
   // In the evening, after a real day's work, she brings you her report card once, on her own,

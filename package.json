@@ -15,6 +15,9 @@
     "hooks:codex:install": "node scripts/install-hooks.js --codex",
     "hooks:codex:uninstall": "node scripts/install-hooks.js --uninstall --codex",
     "test:codex": "node scripts/check-codex.js",
+    "hooks:opencode:install": "node scripts/install-opencode.js",
+    "hooks:opencode:uninstall": "node scripts/install-opencode.js --uninstall",
+    "test:integrations": "node scripts/check-codex.js && node scripts/check-opencode.js",
     "dist": "electron-builder --win"
   },
   "keywords": [

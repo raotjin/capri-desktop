@@ -15,6 +15,7 @@ const { startWindowWatch } = require('./windows');
 const ollama = require('./ollama');
 const apps = require('./apps');
 const hooks = require('../../scripts/install-hooks');
+const opencode = require('../../scripts/install-opencode');
 const demoSteps = require('../../scripts/demo-sequence');
 
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -204,6 +205,7 @@ function rebuildTray() {
   const cfg = config.load();
   const hookState = hooks.status();
   const codexState = hooks.status('codex');
+  const opencodeState = opencode.status();
   const t = TRAY[resolveLang(cfg.lang)];
 
   const displays = screen.getAllDisplays();
@@ -298,6 +300,10 @@ function rebuildTray() {
       ? { label: 'Codex hooks: installed', enabled: false }
       : { label: 'Install Codex hooks', click: () => runHooks('install', { provider: 'codex' }) },
     ...(codexState.installed ? [{ label: 'Remove Codex hooks', click: () => runHooks('uninstall', { provider: 'codex' }) }] : []),
+    opencodeState.installed
+      ? { label: 'OpenCode plugin: installed', enabled: false }
+      : { label: 'Install OpenCode plugin', click: () => runHooks('install', { provider: 'opencode' }) },
+    ...(opencodeState.installed ? [{ label: 'Remove OpenCode plugin', click: () => runHooks('uninstall', { provider: 'opencode' }) }] : []),
     { type: 'separator' },
     { label: t.quit, click: () => app.quit() },
   ]);
@@ -315,7 +321,9 @@ function loginItemOptions() {
 function runHooks(action, { quiet = false, provider = 'claude' } = {}) {
   let outcome;
   try {
-    const result = action === 'install' ? hooks.install(provider) : hooks.uninstall(provider);
+    const installer = provider === 'opencode' ? opencode : hooks;
+    const result = action === 'install' ? installer.install(provider) : installer.uninstall(provider);
+    if (action === 'install' && !config.load().claude) updateConfig({ claude: true });
     outcome = { action, provider, ok: true, file: result.file };
   } catch (err) {
     outcome = { action, provider, ok: false, error: err.message };
@@ -355,7 +363,7 @@ function registerIpc() {
     return { x: p.x - b.x, y: p.y - b.y, inside: p.x >= b.x && p.y >= b.y && p.x < b.x + b.width && p.y < b.y + b.height };
   });
   ipcMain.handle('config:get', () => rendererConfig());
-  ipcMain.handle('hooks:status', () => ({ ...hooks.status(), codexInstalled: hooks.status('codex').installed }));
+  ipcMain.handle('hooks:status', () => ({ ...hooks.status(), codexInstalled: hooks.status('codex').installed, opencodeInstalled: opencode.status().installed }));
   ipcMain.handle('config:set', (_e, patch) => updateConfig(patch));
   ipcMain.handle('demo:window', (_e, open) => demoWindow(open));
   // right-clicking her: the same menu as the tray icon (which Windows often hides behind the ^ by the clock)

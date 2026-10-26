@@ -90,7 +90,9 @@ async function main() {
     const { Brain } = await import(pathToFileURL(path.resolve(__dirname, '../src/renderer/js/brain.js')));
     const panels = [];
     const capri = new Proxy({ windows: { fg: null }, mode: 'idle', setMode(mode) { this.mode = mode; } }, { get: (obj, key) => obj[key] ?? (() => {}) });
-    const brain = new Brain({ capri, panel: { say: (p) => panels.push(p), setTicker() {}, clearKind() {} }, voice: { play() {} }, host: { cursor: async () => null }, lang: 'en' });
+    const tallies = { prompts: 0, actions: 0, approvals: 0, missions: 0 };
+    const mission = { prompt() { tallies.prompts++; }, action() { tallies.actions++; }, approval() { tallies.approvals++; }, done() { tallies.missions++; } };
+    const brain = new Brain({ capri, panel: { say: (p) => panels.push(p), setTicker() {}, clearKind() {}, hide() {} }, voice: { play() {} }, host: { cursor: async () => null }, mission, lang: 'en' });
     brain.handle(prompt);
     brain.handle(patch);
     assert.equal(brain.sessions.get('codex:test').files.size, 2);
@@ -105,6 +107,21 @@ async function main() {
     assert.equal(brain.busySessions.length, 0);
     brain.session(claude);
     assert.equal(brain.sessions.size, 2, 'providers must not share sessions');
+    const open = { ...prompt, provider: 'opencode', session_id: 'opencode:test' };
+    brain.handle(open);
+    assert.ok(brain.context().includes('OpenCode is working'));
+    await brain.handle({ ...open, hook_event_name: 'Stop' });
+    assert.equal(tallies.missions, 1, 'completion feeds the upstream mission log');
+    assert.equal(tallies.prompts, 2);
+    assert.equal(tallies.actions, 1);
+    assert.equal(tallies.approvals, 1);
+    assert.equal(brain.say('info', 'Claude is working', brain.session(open)), panels.length, 'keep upstream panel return value');
+    assert.equal(panels.at(-1).line, 'OpenCode is working');
+    brain.watching = false;
+    const sessionCount = brain.sessions.size;
+    brain.handle({ ...open, session_id: 'disabled' });
+    assert.equal(brain.sessions.size, sessionCount, 'standalone mode ignores assistant events');
+    clearInterval(brain.thinkTimer);
     console.log('Codex integration checks passed.');
   } finally {
     if (oldHome === undefined) delete process.env.CODEX_HOME;

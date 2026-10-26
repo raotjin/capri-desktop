@@ -2,6 +2,11 @@
 
 # Capri
 
+This fork adds **Codex and OpenCode 2** integration alongside Claude Code, on top of upstream 0.3.2.
+Build this fork for those integrations (`npm ci`, then `npm run dist`); the upstream release installer
+does not include them. See the connection instructions below. **Watch assistants** in the tray menu
+controls all three integrations; turn it off for standalone companion mode.
+
 Capri, the *Project Capricorn* construct from Cyberpunk: Edgerunners season 2, lives on your desktop
 and tells you what **Claude Code** is up to. She teleports, glitches, comments on every action,
 comes to find you when Claude needs your permission, and loses it when the job is done.
@@ -178,7 +183,7 @@ asleep. You can just leave her there.
 You need [Node.js](https://nodejs.org) 20 or newer.
 
 ```bash
-git clone https://github.com/mochiiwuff/capri-desktop.git
+git clone https://github.com/raotjin/capri-desktop.git
 cd capri-desktop
 npm install
 npm start
@@ -205,7 +210,7 @@ The hooks run `async`: they never slow Claude down, and when Capri isn't running
 
 Right-click Capri and choose **Install Codex hooks**, then restart Codex. Review and trust the
 new Capri hook definitions in Codex's hook manager (`/hooks` in the CLI). Codex skips untrusted hooks.
-Claude Code and Codex can both stay connected.
+Claude Code, Codex, and OpenCode can all stay connected.
 
 From source, you can also run:
 
@@ -223,6 +228,31 @@ No API key is needed. Events stay on localhost, and patch contents are replaced 
 These hooks support local Codex sessions, not cloud-orchestrated chats.
 
 Run `npm run test:codex` to check hook installation, event delivery, and the character's responses.
+
+### Connect OpenCode 2
+
+Right-click Capri and choose **Install OpenCode plugin**, then restart or reload OpenCode.
+Ensure **Watch assistants** is checked. From source:
+
+```bash
+npm run hooks:opencode:install
+```
+
+This installs a self-contained plugin in `~/.config/opencode/plugins/capri-desktop/`, respecting
+`XDG_CONFIG_HOME` or `OPENCODE_CONFIG_DIR` when set. No OpenCode configuration files or other plugins
+are changed. Remove it with **Remove OpenCode plugin** or `npm run hooks:opencode:uninstall`.
+
+The plugin targets **OpenCode 2** (verified loaded in 2.1.4). OpenCode 1's plugin API is different.
+It observes prompts, tool calls, edits, permission requests, questions, replies, completion,
+interruption, and errors. Native session events are scoped to the current project to avoid duplicate
+notifications from other plugin instances. File contents, attachments, and raw tool output are not forwarded;
+display metadata and up to 6,000 characters of the assistant's final reply stay on localhost.
+Failed delivery gives up after 800 ms and never blocks a turn with an error.
+
+Capri's thinking ticker, mission report, and chat context work with these assistants too.
+Run `npm run test:integrations` for the Codex and OpenCode checks. The implementation follows the
+[OpenCode 2 plugin API](https://github.com/anomalyco/opencode/blob/dev/services/www/src/docs/content/build/plugins/index.mdx)
+and [Codex lifecycle hooks](https://learn.chatgpt.com/docs/hooks).
 
 ### Try it without Claude
 
@@ -273,7 +303,7 @@ named like this (`.mp3`, `.wav`, `.ogg` or `.m4a`):
 
 - **Mac, Linux?** No installer yet, but you can run her from the source (see above).
 - **Phone, Android?** No, she needs a desktop.
-- **Other assistants?** Claude Code and local Codex sessions are supported. See the Codex setup above.
+- **Other assistants?** Claude Code, local Codex sessions, and OpenCode 2 are supported. See setup above.
 - **Ollama?** Two ways. Claude Code running on a local model through Ollama (`ollama launch claude`): she sees it like
   any Claude Code, it's just slower, and her ticker counts the seconds while it thinks. And she can chat with you
   through Ollama herself: see "Talk to her".

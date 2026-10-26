@@ -41,7 +41,8 @@ export class Brain {
     const id = evt.session_id || 'default';
     let s = this.sessions.get(id);
     if (!s) {
-      s = { id, provider: evt.provider === 'codex' ? 'Codex' : 'Claude', project: evt.provider === 'codex' ? 'Codex' : 'Claude', taskStart: null, count: 0, files: new Set(), log: [], working: false, waiting: false };
+      const provider = { codex: 'Codex', opencode: 'OpenCode' }[evt.provider] || 'Claude';
+      s = { id, provider, project: provider, taskStart: null, count: 0, files: new Set(), log: [], working: false, waiting: false };
       this.sessions.set(id, s);
     }
     if (evt.cwd) s.project = basename(evt.cwd);
@@ -55,7 +56,8 @@ export class Brain {
   }
 
   say(kind, line, s, extra = {}) {
-    if (s?.provider === 'Codex') line = line.replace(/Claude(?: Code)?/g, 'Codex');
+    const provider = s?.provider || this.assistant;
+    if (provider && provider !== 'Claude') line = line.replace(/Claude(?: Code)?/g, provider);
     return this.panel.say({ kind, line, tag: s ? s.title || s.project : '', ...extra });
   }
 
@@ -74,6 +76,7 @@ export class Brain {
       this.onLinked?.(evt);
     }
     const s = this.session(evt);
+    this.assistant = s.provider;
     const name = evt.hook_event_name;
     // these three put her somewhere themselves; anything else just brings her out of hiding
     if (name === 'UserPromptSubmit' || name === 'Stop' || name === 'Notification') this.capri.wake();
@@ -228,10 +231,10 @@ export class Brain {
       // you're on another window: she goes and points at Claude's, where the question is
       const win = this.away(s) && this.capri.windows.wins.find((w) => w.id === s.window);
       if (win && this.capri.canPoint(win)) {
-        const there = s.provider === 'Codex' ? this.t.guide.permissionThere.replace(/Claude(?: Code)?/g, 'Codex') : this.t.guide.permissionThere;
+        const there = this.t.guide.permissionThere.replace(/Claude(?: Code)?/g, s.provider);
         const quote = [there, evt.message].filter(Boolean).join('\n');
         this.say('alert', pick(this.t.permission), s, { quote, hold: null });
-        s.pointedAt = await this.capri.pointAt(win, { label: s.provider === 'Codex' ? 'CODEX' : this.t.guide.labels.claude });
+        s.pointedAt = await this.capri.pointAt(win, { label: s.provider === 'Claude' ? this.t.guide.labels.claude : s.provider.toUpperCase() });
         if (!s.waiting && s.pointedAt) this.capri.stopPointing(); // answered while she was on her way
         return;
       }
@@ -357,9 +360,9 @@ export class Brain {
       ? busy.map((s) => {
         const time = s.taskStart ? ` for ${duration(Date.now() - s.taskStart, 'en')}` : '';
         const last = s.last ? `, last: ${s.last.verb} ${s.last.target}` : '';
-        return `Claude is working on ${s.project}${time} (${plural(s.count, ['action', 'actions'], 'en')} so far${last}).`;
+        return `${s.provider} is working on ${s.project}${time} (${plural(s.count, ['action', 'actions'], 'en')} so far${last}).`;
       }).join(' ')
-      : 'Claude is idle.';
+      : 'The connected assistants are idle.';
     const d = this.mission?.day;
     const today = d ? ` Today: ${d.missions} tasks finished, ${d.actions} actions, ${d.files} files changed, ${d.errors} errors.` : '';
     return now + today;
